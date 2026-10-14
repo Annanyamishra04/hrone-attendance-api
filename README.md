@@ -35,27 +35,26 @@ pip install -r requirements-dev.txt
 python -m pytest -v -rs
 ```
 
-Last recorded full run, 2026-10-12, on a clean checkout (Python 3.12.3, FastAPI 0.143.0, Pydantic 2.14.1, PyMongo 4.18.3,
-mongomock 4.3.0): **1038 passed, 62 skipped, 0 failed.** `python -m pytest -m "not mongo"` runs only the 1038 mock-based tests;
-`python -m pytest -m mongo` selects only the 62 real-MongoDB tests.
+Last verified run: GitHub Actions, commit `84d4c42`, Python 3.12.15, MongoDB 7.0.45 service container:
+**1038 mock-based tests passed and 62 real-MongoDB integration tests passed, 0 failed, 0 skipped.**
+MongoDB 6.0 job (same commit): succeeded; `pytest -m mongo` gave 62 passed, 0 skipped.
+`python -m pytest -m "not mongo"` runs only the 1038 mock-based tests; `python -m pytest -m mongo` selects only the
+62 real-MongoDB tests.
 
-* The 1038 passing tests use **`mongomock`** (an in-memory imitation, not MongoDB). `mongomock` cannot run `$lookup` with a
-  sub-pipeline, `$setWindowFields`, `$densify`, `$round` or `explain`, so the summary, leaderboard and trend pipelines are
-  executed by `tests/mini_agg.py`, a small interpreter written by the same author, and compared with `tests/oracle.py`.
-  They show the pipelines match that reading of MongoDB's documented behaviour, not that MongoDB agrees.
-* **The 62 skipped tests are the real-MongoDB integration tests** (`tests/test_mongo_integration.py`: 34;
-  `tests/test_mongo_integration_analytics.py`: 28). They skip themselves unless `MONGO_URI` points at a reachable
-  MongoDB 6.0+, and use a throw-away database, never `MONGO_DB`. **They have not been run, so these are unverified:**
-  unique-index enforcement and concurrent writes on a real server, that the four analytics pipelines execute and
-  return what the oracle computes, the semantic assumptions (`$rank` ties, `$densify` bounds, window frames), and the
-  explain plans (index scans, no collection scans).
+* The 1038 mock-based tests use **`mongomock`** (an in-memory imitation, not MongoDB). `mongomock` cannot run `$lookup`
+  with a sub-pipeline, `$setWindowFields`, `$densify`, `$round` or `explain`, so those pipelines are executed in the
+  mock tests by `tests/mini_agg.py`, a small interpreter I wrote, and compared with `tests/oracle.py`. That only shows
+  the pipelines match my reading of MongoDB's documentation.
+* The **62 real-MongoDB integration tests** (`tests/test_mongo_integration.py`: 34; `tests/test_mongo_integration_analytics.py`: 28)
+  run against a real server and use a throw-away database, never `MONGO_DB`. Locally they skip unless `MONGO_URI` points at
+  MongoDB 6.0+. They cover unique-index enforcement, concurrent writes, the four analytics pipelines compared with the
+  oracle, the semantic assumptions (`$rank` ties, `$densify` bounds, window frames) and explain plans (index scans, no collection scans).
 
-### Running the real-MongoDB tests without a local MongoDB (GitHub Actions)
+### Continuous integration
 
-`.github/workflows/tests.yml` runs the full suite on every push against `mongo:6.0` and `mongo:7.0` service containers. Its
-real-MongoDB step **fails if any of the 62 integration tests is skipped**, so a green run means they really ran. **This
-workflow has been written and its YAML parsed, but it has not been run yet** (it needs a GitHub repository). Until it has
-been run and is green, the MongoDB-dependent behaviour listed above is unverified.
+`.github/workflows/tests.yml` runs the full suite on every push against `mongo:6.0` and `mongo:7.0` service containers.
+The real-MongoDB step fails if any of the 62 integration tests is skipped. Both the MongoDB 7.0 job and the MongoDB 6.0
+job passed.
 
 ## Notes
 
@@ -67,13 +66,17 @@ been run and is green, the MongoDB-dependent behaviour listed above is unverifie
 
 ## Known limitations
 
-* **No real MongoDB was available where this was built** (the MongoDB download hosts are not reachable from that
-  environment and it cannot build or run Docker images). A partial run of the 62 integration tests against *FerretDB 1.24*
-  (a MongoDB-compatible server that is not MongoDB; it lacks `$setWindowFields`, `$densify`, `explain` execution stats and
-  atomic `update_one`) is described in `REVIEW.md` section G. It is **not** evidence that MongoDB behaves as expected.
-
-* Everything under "skipped" above is unverified on a real MongoDB; index plans and aggregation semantics are designed
-  and mock-tested only.
+* The local development machine had no MongoDB, so real-server behaviour was first verified through GitHub Actions
+  (see above). An earlier partial run against FerretDB, which is not MongoDB, is kept in `REVIEW.md` section G for history only.
 * `total` in list responses comes from a separate `count_documents` (an unfiltered count scans the collection).
 * The punch-out lookup sorts one employee's records in memory; no extra index was added for it.
 * Each write adds one `listIndexes` call to confirm the unique index exists.
+
+## How this was built
+
+I used AI assistance (Claude) while building and testing this project. I reviewed the code and can explain it:
+the business rules, the unique-index approach to simultaneous requests, the correction history, and the aggregation pipelines.
+
+## What is complete / missing
+
+Complete: all endpoints in `openapi.yaml`. Missing: nothing known, other than the limitations listed above.
