@@ -1,0 +1,10 @@
+# secrets and local config
+.env
+.env.*
+!.env.example
+# environments / caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/

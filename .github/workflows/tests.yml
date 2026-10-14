@@ -1,0 +1,42 @@
+name: tests
+
+# Runs the whole suite, including the 62 tests that need a REAL MongoDB, against MongoDB 6.0 and 7.0.
+# The real-MongoDB step fails if any of those tests is skipped, so a green run means they actually ran.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mongo: ["6.0", "7.0"]
+    services:
+      mongodb:
+        image: mongo:${{ matrix.mongo }}
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MONGO_URI: mongodb://localhost:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r requirements-dev.txt
+      - name: Unit and contract tests (mongomock)
+        run: python -m pytest -m "not mongo" -q -rs
+      - name: Integration tests (real MongoDB ${{ matrix.mongo }}; fails if any test is skipped)
+        run: |
+          set -o pipefail
+          python -m pytest -m mongo -v -rs -p no:cacheprovider | tee mongo.txt
+          if grep -qiE "skipped" mongo.txt; then echo "Some real-MongoDB tests were skipped"; exit 1; fi
